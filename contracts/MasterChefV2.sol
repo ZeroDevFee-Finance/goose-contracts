@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT
-
 pragma solidity 0.6.12;
 
 import "@openzeppelin/contracts/math/SafeMath.sol";
@@ -8,13 +7,23 @@ import "./libs/SafeBEP20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-import "./EggToken.sol";
+import "./ZeroEggToken.sol";
 
-// MasterChef is the master of Egg. He can make Egg and he is a fair guy.
+// MasterChef is the master of Egg. He can make Egg and he is a fair guy. (We use Egg = ZDF)
 //
-// Note that it's ownable and the owner wields tremendous power. The ownership
-// will be transferred to a governance smart contract once EGG is sufficiently
-// distributed and the community can show to govern itself.
+// Note that it's ownable and the owner wields not so special power. The 10% dev fee is removed.
+// The owner earn from
+// 1. 25% Initial mint (Presale)
+// 2. 30% Of deposit fee
+// 3. Selling unique NFTs
+//
+// Minter and Early advertiser special rewards (Will be given later if the project success ie. we finish initial 1,000,000 ZDF sale)
+// 1. 2,000,000 ZEROEGG exclusively distributed over 5 years (62500, 62500, 125000, 250000, 500000)
+// 2. Limited advertisement slot on ZeroDevFee.finance and all Non-profit defi projects website that you can advertise your project, sell or rent
+// 3. Unique early minter and advertiser NFTs on Non-profit NFTBox.vip like platform. (1 Unit for 100 ZEROEGG minted)
+//
+// ZeroDevFee Finance has Non-profit defi project which will help increase the price of the ZDF token
+// In 5 years, minter will receives 10x value in BNB unit
 //
 // Have fun reading it. Hopefully it's bug-free. God bless.
 contract MasterChefV2 is Ownable, ReentrancyGuard {
@@ -45,18 +54,26 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
         uint256 lastRewardBlock;  // Last block number that EGGs distribution occurs.
         uint256 accEggPerShare;   // Accumulated EGGs per share, times 1e12. See below.
         uint16 depositFeeBP;      // Deposit fee in basis points
+		
+		// The yieldSafetyDivider = startingLiquidityAmount^2 / emissionRate / 10^18
+		// startingLiquidityAmount^2 = amount of egg * amount of BNB = (10^5 * 10^18 * 10^3 * 10^18)
+		// emissionRate = 1
+		// for base pool = 10^44 / 10^18 = 10^26
+		uint256 yieldSafetyDivider;
     }
 
     // The EGG TOKEN!
-    EggToken public egg;
+    ZeroEggToken public egg;
     // Dev address.
-    address public devaddr;
+    address payable public devaddr;
     // EGG tokens created per block.
     uint256 public eggPerBlock;
     // Bonus muliplier for early egg makers.
     uint256 public constant BONUS_MULTIPLIER = 1;
     // Deposit Fee address
     address public feeAddress;
+	address public newFeeAddress;
+	uint256 public newFeeAddressTimelock;
 
     // Info of each pool.
     PoolInfo[] public poolInfo;
@@ -71,12 +88,13 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
     event Withdraw(address indexed user, uint256 indexed pid, uint256 amount);
     event EmergencyWithdraw(address indexed user, uint256 indexed pid, uint256 amount);
     event SetFeeAddress(address indexed user, address indexed newAddress);
+	event ExecuteSetFeeAddress(address indexed user, address indexed newAddress);
     event SetDevAddress(address indexed user, address indexed newAddress);
     event UpdateEmissionRate(address indexed user, uint256 goosePerBlock);
 
     constructor(
-        EggToken _egg,
-        address _devaddr,
+        ZeroEggToken _egg,
+        address payable _devaddr,
         address _feeAddress,
         uint256 _eggPerBlock,
         uint256 _startBlock
@@ -99,7 +117,7 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
     }
 
     // Add a new lp to the pool. Can only be called by the owner.
-    function add(uint256 _allocPoint, IBEP20 _lpToken, uint16 _depositFeeBP, bool _withUpdate) public onlyOwner nonDuplicated(_lpToken) {
+    function add(uint256 _allocPoint, IBEP20 _lpToken, uint16 _depositFeeBP, uint256 _yieldSafetyDivider, bool _withUpdate) public onlyOwner nonDuplicated(_lpToken) {
         require(_depositFeeBP <= 10000, "add: invalid deposit fee basis points");
         if (_withUpdate) {
             massUpdatePools();
@@ -108,16 +126,17 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
         totalAllocPoint = totalAllocPoint.add(_allocPoint);
         poolExistence[_lpToken] = true;
         poolInfo.push(PoolInfo({
-        lpToken : _lpToken,
-        allocPoint : _allocPoint,
-        lastRewardBlock : lastRewardBlock,
-        accEggPerShare : 0,
-        depositFeeBP : _depositFeeBP
+			lpToken : _lpToken,
+			allocPoint : _allocPoint,
+			lastRewardBlock : lastRewardBlock,
+			accEggPerShare : 0,
+			depositFeeBP : _depositFeeBP,
+			yieldSafetyDivider: _yieldSafetyDivider
         }));
     }
 
     // Update the given pool's EGG allocation point and deposit fee. Can only be called by the owner.
-    function set(uint256 _pid, uint256 _allocPoint, uint16 _depositFeeBP, bool _withUpdate) public onlyOwner {
+    function set(uint256 _pid, uint256 _allocPoint, uint16 _depositFeeBP, uint256 _yieldSafetyDivider, bool _withUpdate) public onlyOwner {
         require(_depositFeeBP <= 10000, "set: invalid deposit fee basis points");
         if (_withUpdate) {
             massUpdatePools();
@@ -125,6 +144,7 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
         totalAllocPoint = totalAllocPoint.sub(poolInfo[_pid].allocPoint).add(_allocPoint);
         poolInfo[_pid].allocPoint = _allocPoint;
         poolInfo[_pid].depositFeeBP = _depositFeeBP;
+        poolInfo[_pid].yieldSafetyDivider = _yieldSafetyDivider;
     }
 
     // Return reward multiplier over the given _from to _to block.
@@ -140,7 +160,11 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
         uint256 lpSupply = pool.lpToken.balanceOf(address(this));
         if (block.number > pool.lastRewardBlock && lpSupply != 0) {
             uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.number);
-            uint256 eggReward = multiplier.mul(eggPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
+			uint256 newEggPerBlock = lpSupply.mul(lpSupply).div(pool.yieldSafetyDivider);
+			if (eggPerBlock < newEggPerBlock) {
+				newEggPerBlock = eggPerBlock;
+			}
+            uint256 eggReward = multiplier.mul(newEggPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
             accEggPerShare = accEggPerShare.add(eggReward.mul(1e12).div(lpSupply));
         }
         return user.amount.mul(accEggPerShare).div(1e12).sub(user.rewardDebt);
@@ -166,8 +190,12 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
             return;
         }
         uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.number);
-        uint256 eggReward = multiplier.mul(eggPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
-        egg.mint(devaddr, eggReward.div(10));
+		uint256 newEggPerBlock = lpSupply.mul(lpSupply).div(pool.yieldSafetyDivider);
+		if (eggPerBlock < newEggPerBlock) {
+			newEggPerBlock = eggPerBlock;
+		}
+        uint256 eggReward = multiplier.mul(newEggPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
+        //egg.mint(devaddr, eggReward.div(10)); // Zero dev fee!
         egg.mint(address(this), eggReward);
         pool.accEggPerShare = pool.accEggPerShare.add(eggReward.mul(1e12).div(lpSupply));
         pool.lastRewardBlock = block.number;
@@ -240,17 +268,26 @@ contract MasterChefV2 is Ownable, ReentrancyGuard {
     }
 
     // Update dev address by the previous dev.
-    function dev(address _devaddr) public {
+    function dev(address payable _devaddr) public {
         require(msg.sender == devaddr, "dev: wut?");
         devaddr = _devaddr;
         emit SetDevAddress(msg.sender, _devaddr);
     }
 
+	// Update fee address by the dev.
     function setFeeAddress(address _feeAddress) public {
-        require(msg.sender == feeAddress, "setFeeAddress: FORBIDDEN");
-        feeAddress = _feeAddress;
+        require(msg.sender == devaddr, "setFeeAddress: FORBIDDEN");
+        newFeeAddress = _feeAddress;
+		newFeeAddressTimelock = block.timestamp + 1 days;
         emit SetFeeAddress(msg.sender, _feeAddress);
     }
+	
+	function executeSetFeeAddress() public {
+		require(msg.sender == devaddr, "setFeeAddress: FORBIDDEN");
+		require(block.timestamp > newFeeAddressTimelock, "TIMELOCK");
+		feeAddress = newFeeAddress;
+		emit ExecuteSetFeeAddress(msg.sender, newFeeAddress);
+	}
 
     //Pancake has to add hidden dummy pools inorder to alter the emission, here we make it simple and transparent to all.
     function updateEmissionRate(uint256 _eggPerBlock) public onlyOwner {

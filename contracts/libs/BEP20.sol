@@ -2,7 +2,6 @@
 
 pragma solidity >=0.4.0;
 
-import '@openzeppelin/contracts/access/Ownable.sol';
 import '@openzeppelin/contracts/GSN/Context.sol';
 import './IBEP20.sol';
 import '@openzeppelin/contracts/math/SafeMath.sol';
@@ -31,7 +30,7 @@ import '@openzeppelin/contracts/math/SafeMath.sol';
  * functions have been added to mitigate the well-known issues around setting
  * allowances. See {IBEP20-approve}.
  */
-contract BEP20 is Context, IBEP20, Ownable {
+contract BEP20 is Context, IBEP20/*, Ownable*/ {
     using SafeMath for uint256;
 
     mapping(address => uint256) private _balances;
@@ -63,7 +62,8 @@ contract BEP20 is Context, IBEP20, Ownable {
      * @dev Returns the bep token owner.
      */
     function getOwner() external override view returns (address) {
-        return owner();
+        return address(0);
+        //return owner();
     }
 
     /**
@@ -195,15 +195,17 @@ contract BEP20 is Context, IBEP20, Ownable {
     /**
      * @dev Creates `amount` tokens and assigns them to `msg.sender`, increasing
      * the total supply.
+     * 
+     * This function is deprecated in favour of app minting
      *
      * Requirements
      *
      * - `msg.sender` must be the token owner
      */
-    function mint(uint256 amount) public onlyOwner returns (bool) {
+    /*function mint(uint256 amount) public onlyOwner returns (bool) {
         _mint(_msgSender(), amount);
         return true;
-    }
+    }*/
 
     /**
      * @dev Moves tokens `amount` from `sender` to `recipient`.
