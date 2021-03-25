@@ -9,21 +9,26 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 import "./ZeroEggToken.sol";
 
-// MasterChef is the master of Egg. He can make Egg and he is a fair guy. (We use Egg = ZDF)
+// MasterChef is the master of Egg. He can make Egg and he is a fair guy. (We use Egg = ZEROEGG)
 //
-// Note that it's ownable and the owner wields not so special power. The 10% dev fee is removed.
+// Note that it's ownable but the owner wields not so special power. The 10% dev fee is removed.
 // The owner earn from
-// 1. 25% Initial mint (Presale)
-// 2. 30% Of deposit fee
-// 3. Selling unique NFTs
+// 1. Some developer share that minters volunteered to give to the developer in exchange for huge rewards if project success. (NOTE: Minter can choose not to give developer funding)
+// 3. Selling unique NFTs.
 //
-// Minter and Early advertiser special rewards (Will be given later if the project success ie. we finish initial 1,000,000 ZDF sale)
-// 1. 2,000,000 ZEROEGG exclusively distributed over 5 years (62500, 62500, 125000, 250000, 500000)
+// Minter special rewards (Start given in 3 months after first round of minting complete)
+// 1. Up to 3.5x ZEROEGG reward distibuted over 6 years if minter choose to share 50% of fund to help dev (First two years 35% APR, Last four years 70% APR)
 // 2. Limited advertisement slot on ZeroDevFee.finance and all Non-profit defi projects website that you can advertise your project, sell or rent
-// 3. Unique early minter and advertiser NFTs on Non-profit NFTBox.vip like platform. (1 Unit for 100 ZEROEGG minted)
+// 3. Unique NFTs on Non-profit NFTBox.vip like platform. (1 Unit for 100 ZEROEGG minted)
+// 4. For the first 100 minter will receive a unique NFTs.
+// 5. For last and first minter of each round will receive a unique NFTs.
 //
-// ZeroDevFee Finance has Non-profit defi project which will help increase the price of the ZDF token
-// In 5 years, minter will receives 10x value in BNB unit
+// Advertiser special rewards ...
+//
+// ZeroDevFee Finance has Non-profit defi project which will help increase the price of the ZDF token by burning around 100,000,000$ in 5 years.
+// You can see price prediction at ...
+// In 5 years, minter in the first round that choose to share 50% to help dev may receive more than 4x value in BNB unit
+// Funding that minter share will be used to build Non-profit defi ecosystem.
 //
 // Have fun reading it. Hopefully it's bug-free. God bless.
 contract MasterChefV2 is Ownable, ReentrancyGuard {
